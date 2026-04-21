@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vinh Danh Thí Sinh Xuất Sắc</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- CONFIG PANEL -->
+<div id="configPanel">
+  <div class="config-box">
+    <h2>⚙️ Cài đặt Bảng Vinh Danh</h2>
+    <p>Cấu hình cuộc thi và giải thưởng trước khi hiển thị</p>
+
+    <div class="config-group">
+      <label>Tên cuộc thi</label>
+      <input type="text" id="cfgContestName" value="Cuộc Thi Kiến Thức Xuất Sắc 2026" placeholder="Nhập tên cuộc thi...">
+    </div>
+
+    <div class="config-group">
+      <label>Mô tả ngắn</label>
+      <input type="text" id="cfgContestDesc" value="Vinh danh những thí sinh đạt thành tích xuất sắc nhất" placeholder="Mô tả...">
+    </div>
+
+    <div class="config-group">
+      <label>Dữ liệu thí sinh</label>
+
+      <!-- CURL INPUT -->
+      <div class="curl-box">
+        <div class="curl-label">⚡ Dán lệnh curl để tự gọi API</div>
+        <textarea id="cfgCurl" rows="4" placeholder="curl 'https://api.example.com/...' -H 'Authorization: Bearer TOKEN'"></textarea>
+        <div class="curl-actions">
+          <button class="btn-exec-curl" onclick="executeCurl()">▶ Thực thi</button>
+          <span id="curlStatus" class="curl-status"></span>
+        </div>
+      </div>
+
+      <div class="or-divider"><span>hoặc</span></div>
+
+      <textarea id="cfgData" rows="4" placeholder='Paste JSON response. Ví dụ: {"success":true,"result":[]}'></textarea>
+      <div style="margin-top:8px">
+        <label class="btn-add-prize" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">
+          📂 Chọn file JSON
+          <input type="file" accept=".json" id="cfgFile" style="display:none" onchange="loadJsonFile(this)">
+        </label>
+      </div>
+      <small>Paste lệnh curl hoặc JSON trực tiếp, hoặc chọn file .json.</small>
+    </div>
+
+    <div class="config-group">
+      <label>Danh sách giải thưởng (từ cao → thấp)</label>
+      <div id="prizeList">
+        <div class="prize-row">
+          <input type="text" value="Giải Đặc biệt" placeholder="Tên giải">
+          <input type="number" value="1" min="1" placeholder="SL">
+          <button class="btn-remove-prize" onclick="removePrize(this)" title="Xóa">✕</button>
+        </div>
+        <div class="prize-row">
+          <input type="text" value="Giải Nhất" placeholder="Tên giải">
+          <input type="number" value="10" min="1" placeholder="SL">
+          <button class="btn-remove-prize" onclick="removePrize(this)" title="Xóa">✕</button>
+        </div>
+        <div class="prize-row">
+          <input type="text" value="Giải Nhì" placeholder="Tên giải">
+          <input type="number" value="20" min="1" placeholder="SL">
+          <button class="btn-remove-prize" onclick="removePrize(this)" title="Xóa">✕</button>
+        </div>
+        <div class="prize-row">
+          <input type="text" value="Giải Đồng hạng" placeholder="Tên giải">
+          <input type="number" value="100" min="1" placeholder="SL">
+          <button class="btn-remove-prize" onclick="removePrize(this)" title="Xóa">✕</button>
+        </div>
+      </div>
+      <button class="btn-add-prize" onclick="addPrize()">+ Thêm giải</button>
+      <small>Nhập theo thứ tự: giải cao nhất ở trên, thấp nhất ở dưới. Slide sẽ hiển thị từ giải thấp → cao để tạo cao trào.</small>
+    </div>
+
+    <button class="btn-card-designer" onclick="openDesigner()">🎨 Cấu hình thẻ hạng</button>
+    <button class="btn-start" onclick="startApp()">🚀 Bắt đầu Vinh Danh</button>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div id="loadingScreen" class="hidden">
+  <div class="loader"></div>
+  <div class="loader-text">Đang tải dữ liệu thí sinh...</div>
+</div>
+
+<!-- MAIN CONTENT -->
+<div id="mainContent">
+  <div id="slideContainer"></div>
+  <div class="nav-dots" id="navDots"></div>
+  <div class="slide-counter" id="slideCounter"></div>
+  <div class="kb-hint">
+    <span><kbd>←</kbd> <kbd>→</kbd> hoặc <kbd>↑</kbd> <kbd>↓</kbd> chuyển slide</span>
+    <span><kbd>Home</kbd> đầu · <kbd>End</kbd> cuối</span>
+    <span><kbd>Space</kbd> tiếp theo</span>
+  </div>
+</div>
+
+<div id="designerOv" class="dov" style="display:none">
+  <div class="dov-inner">
+    <div class="dov-head">
+      <span class="dov-title">🎨 Cấu hình thẻ hạng</span>
+      <div class="dov-tabs">
+        <button class="dov-tab active" data-l="4" onclick="dovSetLevel(4)">Đặc biệt</button>
+        <button class="dov-tab" data-l="3" onclick="dovSetLevel(3)">Nhất</button>
+        <button class="dov-tab" data-l="2" onclick="dovSetLevel(2)">Nhì</button>
+        <button class="dov-tab" data-l="1" onclick="dovSetLevel(1)">Ba</button>
+        <button class="dov-tab" data-l="0" onclick="dovSetLevel(0)">Cơ bản</button>
+      </div>
+      <button class="dov-close" onclick="closeDesigner()">✕</button>
+    </div>
+    <div class="dov-body">
+      <div class="dov-left">
+        <div class="dov-canvas-label">Kéo để định vị · Card preview 240×340px</div>
+        <div id="dovCanvas" class="dov-canvas"></div>
+      </div>
+      <div class="dov-right">
+        <div class="dov-prop-section">
+          <div class="dov-prop-title">🖼️ Ảnh nền</div>
+          <div class="dov-bg-row">
+            <label class="dov-btn" onclick="document.getElementById('dovBgFile').click()">📁 Chọn ảnh</label>
+            <button class="dov-btn" onclick="clearBgImage()">✕ Xóa</button>
+            <input id="dovBgFile" type="file" accept="image/*" style="display:none" onchange="onBgImageFile(event)">
+          </div>
+          <input type="text" id="dovBgUrlInput" class="dov-input" placeholder="Hoặc nhập URL ảnh..." oninput="onBgImageUrl(this.value)">
+        </div>
+
+        <div class="dov-prop-section">
+          <div class="dov-prop-title">👤 Avatar</div>
+          <label class="dov-label">Kích thước: <strong id="dovAvSizeVal">110</strong>px</label>
+          <input type="range" id="dovAvSize" class="dov-range" min="60" max="180" value="110" oninput="onAvSize(this.value)">
+        </div>
+
+        <div class="dov-prop-section">
+          <div class="dov-prop-title">🖼 Frame</div>
+          <select id="dovFrameSel" class="dov-select" onchange="onFrameSel(this.value)">
+            <option value="auto">Tự động (theo hạng)</option>
+            <option value="none">Không có frame</option>
+          </select>
+        </div>
+
+        <div class="dov-prop-section">
+          <div class="dov-prop-title">🏅 Huy hiệu</div>
+          <label class="dov-check"><input type="checkbox" id="dovBadgeShow" checked onchange="onBadgeShow(this.checked)"> Hiển thị</label>
+          <label class="dov-label">Kích thước: <strong id="dovBadgeSizeVal">44</strong>px</label>
+          <input type="range" id="dovBadgeSize" class="dov-range" min="24" max="80" value="44" oninput="onBadgeSize(this.value)">
+        </div>
+
+        <div class="dov-prop-section">
+          <div class="dov-prop-title">📝 Thông tin</div>
+          <label class="dov-check"><input type="checkbox" id="dovShowName"  checked onchange="onTxtShow('name',  this.checked)"> Họ tên</label>
+          <label class="dov-check"><input type="checkbox" id="dovShowCode"  checked onchange="onTxtShow('code',  this.checked)"> Mã số</label>
+          <label class="dov-check"><input type="checkbox" id="dovShowOrg"   checked onchange="onTxtShow('org',   this.checked)"> Đơn vị</label>
+          <label class="dov-check"><input type="checkbox" id="dovShowScore" checked onchange="onTxtShow('score', this.checked)"> Điểm số</label>
+          <label class="dov-check"><input type="checkbox" id="dovShowTime"  checked onchange="onTxtShow('time',  this.checked)"> Thời gian</label>
+        </div>
+      </div>
+    </div>
+    <div class="dov-foot">
+      <button class="dov-btn dov-btn-reset" onclick="resetLevelCfg()">↺ Mặc định cấp này</button>
+      <button class="dov-btn dov-btn-save"  onclick="saveLevelCfg()">💾 Lưu & Áp dụng</button>
+    </div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
