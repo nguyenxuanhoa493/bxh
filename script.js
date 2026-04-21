@@ -698,6 +698,10 @@ function animateChartBars(slideEl) {
     const pct = bar.dataset.pct;
     const fill = bar.querySelector('.org-chart-fill');
     if (fill) {
+      // Reset width then force reflow to ensure transition starts reliably
+      fill.style.width = '0%';
+      // force reflow
+      void fill.offsetWidth;
       requestAnimationFrame(() => { fill.style.width = pct + '%'; });
     }
   });
@@ -830,9 +834,11 @@ function buildSlides(data, prizes, contestName, contestDesc) {
     if (items.length === 0) return;
 
     // Helper to create a slide element
-    function makeSlide(className, content, navLabel) {
+    // skipHeaderAnim: nếu true → không chạy animation phần header (dùng cho trang phụ của cùng 1 giải)
+    function makeSlide(className, content, navLabel, skipHeaderAnim) {
       const s = document.createElement('section');
       s.className = `slide prize-level-${level} ${className || ''}`;
+      if (skipHeaderAnim) s.classList.add('no-section-anim');
       s.id = `slide-${slideIndex}`;
       s.innerHTML = slideBgDecorations(level) + content;
       container.appendChild(s);
@@ -860,10 +866,12 @@ function buildSlides(data, prizes, contestName, contestDesc) {
         const pageNum = Math.floor(p / MAX_ROWS_PER_SECTION) + 1;
         const totalPages = Math.ceil(items.length / MAX_ROWS_PER_SECTION);
         const pageLabel = totalPages > 1 ? ` (${pageNum}/${totalPages})` : '';
+        // Nếu là trang thứ 2+ của cùng một giải thì không cần chơi lại animation tiêu đề
         makeSlide('',
           sectionHeader(`${items.length} thí sinh xuất sắc${pageLabel}`) +
           renderDualTable(chunk, offset + p + 1),
-          `${prize.name}${pageLabel}`
+          `${prize.name}${pageLabel}`,
+          pageNum > 1
         );
       }
     }
@@ -877,7 +885,8 @@ function buildSlides(data, prizes, contestName, contestDesc) {
         makeSlide('',
           sectionHeader(`${items.length} thí sinh xuất sắc${pageLabel}`) +
           renderDualTable(chunk, offset + p + 1),
-          `${prize.name}${pageLabel}`
+          `${prize.name}${pageLabel}`,
+          pageNum > 1
         );
       }
     }
@@ -892,7 +901,8 @@ function buildSlides(data, prizes, contestName, contestDesc) {
         makeSlide('',
           sectionHeader(`${items.length} thí sinh xuất sắc${pageLabel}`) +
           renderHonorGrid(chunk, offset + p + 1, level),
-          `${prize.name}${pageLabel}`
+          `${prize.name}${pageLabel}`,
+          pageNum > 1
         );
       }
     }
@@ -963,10 +973,35 @@ function goToSlide(index) {
     setTimeout(() => animateChartBars(newSlide), 300);
   }
 
-  setTimeout(() => {
+  // Use transitionend to re-enable controls when the slide transition completes.
+  let settled = false;
+  function clearTransition() {
+    if (settled) return; settled = true;
     oldSlide.classList.remove('exit-up', 'exit-down');
     isTransitioning = false;
-  }, 5000);
+    newSlide.removeEventListener('transitionend', onNewTransitionEnd);
+    oldSlide.removeEventListener('transitionend', onOldTransitionEnd);
+    clearTimeout(fallbackTimeout);
+  }
+
+  function onNewTransitionEnd(e) {
+    if (e.target !== newSlide) return;
+    if (e.propertyName && (e.propertyName.includes('transform') || e.propertyName.includes('opacity'))) {
+      clearTransition();
+    }
+  }
+  function onOldTransitionEnd(e) {
+    if (e.target !== oldSlide) return;
+    if (e.propertyName && (e.propertyName.includes('transform') || e.propertyName.includes('opacity'))) {
+      clearTransition();
+    }
+  }
+
+  newSlide.addEventListener('transitionend', onNewTransitionEnd);
+  oldSlide.addEventListener('transitionend', onOldTransitionEnd);
+
+  // Fallback: in case transitionend doesn't fire, unlock after 1400ms
+  const fallbackTimeout = setTimeout(clearTransition, 1400);
 }
 
 function nextSlide() { goToSlide(currentSlide + 1); }

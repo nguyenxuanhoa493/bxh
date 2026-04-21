@@ -256,6 +256,15 @@ body{
 .slide.active .section-title{opacity:1;transform:translateY(0)}
 .slide.active .section-subtitle{opacity:1}
 
+/* Nếu là trang phụ (cùng 1 giải) — không chơi lại animation tiêu đề */
+.slide.no-section-anim .section-badge,
+.slide.no-section-anim .section-title,
+.slide.no-section-anim .section-subtitle{
+  opacity:1 !important;
+  transform:none !important;
+  transition:none !important;
+}
+
 /* ===== CARD REVEAL WRAPPER ===== */
 .card-reveal{opacity:0;transform:translateY(38px)}
 .slide.active .card-reveal{animation:fadeInUp 0.8s cubic-bezier(.22,1,.36,1) both}
