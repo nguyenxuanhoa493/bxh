@@ -1,5 +1,0 @@
-[     221ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:9999/favicon.ico:0
-[   19330ms] TypeError: Cannot read properties of undefined (reading 'classList')
-    at goToSlide (http://localhost:9999/script.js:884:12)
-    at nextSlide (http://localhost:9999/script.js:912:24)
-    at document.addEventListener.passive (http://localhost:9999/script.js:970:23)
