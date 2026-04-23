@@ -12,14 +12,14 @@
 <body>
 
 <!-- CONFIG PANEL -->
-<div id="configPanel">
+<div id="configPanel" class="hidden">
   <div class="config-box">
     <h2>⚙️ Cài đặt Bảng Vinh Danh</h2>
     <p>Cấu hình cuộc thi và giải thưởng trước khi hiển thị</p>
 
     <div class="config-group">
       <label>Tên cuộc thi</label>
-      <input type="text" id="cfgContestName" value="Cuộc Thi Kiến Thức Xuất Sắc 2026" placeholder="Nhập tên cuộc thi...">
+      <input type="text" id="cfgContestName" value="Sản phẩm giỏi - Nghiệp vụ vững 2026" placeholder="Nhập tên cuộc thi...">
     </div>
 
     <div class="config-group">
@@ -94,6 +94,9 @@
 <!-- MAIN CONTENT -->
 <div id="mainContent">
   <div id="slideContainer"></div>
+  <!-- Corner branding images -->
+  <img class="corner-img corner-left"  src="left.png"  alt="">
+  <img class="corner-img corner-right" src="right.png" alt="">
   <div class="nav-dots" id="navDots"></div>
   <div class="slide-counter" id="slideCounter"></div>
   <div class="kb-hint">
@@ -168,6 +171,13 @@
       <button class="dov-btn dov-btn-save"  onclick="saveLevelCfg()">💾 Lưu & Áp dụng</button>
     </div>
   </div>
+</div>
+
+<!-- FIREWORKS CANVAS -->
+<canvas id="fireworksCanvas"></canvas>
+<!-- CONGRATS BANNER -->
+<div id="congratsBanner" class="congrats-banner">
+  <div class="congrats-inner">🏆 CHÚC MỪNG 🏆</div>
 </div>
 
 <script src="script.js"></script>

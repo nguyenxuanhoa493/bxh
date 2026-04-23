@@ -708,7 +708,312 @@ function animateChartBars(slideEl) {
 }
 
 // ===== BUILD ALL SLIDES =====
-function buildSlides(data, prizes, contestName, contestDesc) {
+// ===== REPORT SLIDES =====
+function buildReportSlides(container, data, slideNames, startIndex, prizeData) {
+  if (!data || !data.length) return 0;
+  prizeData = prizeData || [];
+  let idx = startIndex;
+  let count = 0;
+
+  function makeReport(id, navLabel, innerHTML) {
+    const s = document.createElement('section');
+    s.className = 'slide report-slide';
+    s.id = 'slide-' + idx;
+    s.innerHTML = `<div class="report-bg-deco"></div>` + innerHTML;
+    container.appendChild(s);
+    slideNames.push(navLabel);
+    idx++; count++;
+    return s;
+  }
+
+  // ── helpers ──────────────────────────────────────────────
+  function getOrg(r) {
+    const o = r.__expand && r.__expand.orgs && r.__expand.orgs[0];
+    return o ? (o.short_name || o.name || 'N/A') : 'N/A';
+  }
+  function getUser(r) { return (r.__expand && r.__expand.user) || {}; }
+
+  // ── compute stats ─────────────────────────────────────────
+  const scores = data.map(r => r.score);
+  const totalScore = scores.reduce((a,b)=>a+b,0);
+  const avgScore   = totalScore / scores.length;
+  const maxScore   = Math.max(...scores);
+  const minScore   = Math.min(...scores);
+
+  const times = data.map(r => r.spent_time || 0).filter(t=>t>0);
+  const avgTime = times.length ? Math.round(times.reduce((a,b)=>a+b,0)/times.length) : 0;
+  const minTime = Math.min(...times), maxTime = Math.max(...times);
+
+  // Org map (use null-prototype to avoid Object prototype key collisions)
+  const orgMap = Object.create(null);
+  for (const r of data) {
+    const org = getOrg(r);
+    if (!orgMap[org]) orgMap[org] = { n:0, ts:0, tt:0 };
+    orgMap[org].n++;
+    orgMap[org].ts += r.score;
+    orgMap[org].tt += r.spent_time || 0;
+  }
+  // Prize winners per org
+  const orgPrizeMap = Object.create(null);
+  for (const r of prizeData) {
+    const org = getOrg(r);
+    orgPrizeMap[org] = (orgPrizeMap[org] || 0) + 1;
+  }
+
+  const orgArr = Object.entries(orgMap)
+    .map(([name, v]) => ({
+      name, n: v.n,
+      avg: v.ts/v.n,
+      avgTime: v.n ? Math.round(v.tt/v.n) : 0,
+      prizes: orgPrizeMap[name] || 0,
+    }))
+    .sort((a,b) => b.n - a.n);
+
+  // Score buckets (0–60, gap 10)
+  const sBuckets = [
+    { label: '0–9',   min:0,  max:10,       n:0, color:'#78909C' },
+    { label: '10–19', min:10, max:20,        n:0, color:'#4FC3F7' },
+    { label: '20–29', min:20, max:30,        n:0, color:'#69F0AE' },
+    { label: '30–39', min:30, max:40,        n:0, color:'#FFAB40' },
+    { label: '40–49', min:40, max:50,        n:0, color:'#FF8A65' },
+    { label: '50–59', min:50, max:60,        n:0, color:'#FFD700' },
+    { label: '60',    min:60, max:Infinity,  n:0, color:'#FF80AB' },
+  ];
+  for (const r of data) {
+    const bk = sBuckets.find(b => r.score >= b.min && r.score < b.max);
+    if (bk) bk.n++;
+  }
+
+  // Time buckets (seconds → minutes), track avg score per bucket
+  const tBuckets = [
+    { label: '<30 phút',   min:0,    max:1800,      n:0, ts:0, color:'#80DEEA' },
+    { label: '30–45 phút', min:1800, max:2700,       n:0, ts:0, color:'#69F0AE' },
+    { label: '45–60 phút', min:2700, max:3600,       n:0, ts:0, color:'#FFAB40' },
+    { label: '60–75 phút', min:3600, max:4500,       n:0, ts:0, color:'#FF8A65' },
+    { label: '>75 phút',   min:4500, max:Infinity,   n:0, ts:0, color:'#CE93D8' },
+  ];
+  for (const r of data) {
+    const t = r.spent_time || 0;
+    const bk = tBuckets.find(b => t >= b.min && t < b.max);
+    if (bk) { bk.n++; bk.ts += r.score; }
+  }
+  tBuckets.forEach(b => { b.avgScore = b.n ? +(b.ts / b.n).toFixed(1) : 0; });
+
+  // Sex
+  const sexCounts = { female:0, male:0, other:0 };
+  for (const r of data) {
+    const u = getUser(r);
+    if (u.sex === '0') sexCounts.female++;
+    else if (u.sex === '1') sexCounts.male++;
+    else sexCounts.other++;
+  }
+
+  // ── helper renderers ──────────────────────────────────────
+  function fmt(s) { return Math.round(s); }
+  function fmtTime(s) {
+    if (!s) return '0 giây';
+    const m = Math.floor(s/60), sec = s%60;
+    return m ? `${m} phút ${sec ? sec + 's' : ''}`.trim() : `${sec}s`;
+  }
+  function barChart(items, valueKey, maxVal, colorKey, labelKey, showValue) {
+    return `<div class="rpt-bars">` + items.map(item => {
+      const pct = Math.round((item[valueKey] / maxVal) * 100);
+      const val = showValue === 'pct'
+        ? item[valueKey] + ' (' + Math.round(item[valueKey]/data.length*100) + '%)'
+        : showValue === 'score' ? item[valueKey].toFixed(1)
+        : item[valueKey];
+      return `<div class="rpt-bar-row">
+        <div class="rpt-bar-label" title="${item[labelKey]}">${item[labelKey]}</div>
+        <div class="rpt-bar-track">
+          <div class="rpt-bar-fill rpt-bar-anim" style="width:${pct}%;background:${item[colorKey] || '#4FC3F7'}"></div>
+        </div>
+        <div class="rpt-bar-val">${val}</div>
+      </div>`;
+    }).join('') + `</div>`;
+  }
+
+  function reportHeader(icon, title, subtitle) {
+    return `<div class="rpt-header">
+      <div class="rpt-icon">${icon}</div>
+      <div class="rpt-title">${title}</div>
+      <div class="rpt-subtitle">${subtitle}</div>
+    </div>`;
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // SLIDE 1: Tổng quan
+  // ─────────────────────────────────────────────────────────
+  makeReport('overview', '📊 Tổng quan', `
+    ${reportHeader('📊','Tổng quan kết quả thi','Thống kê tổng hợp toàn bộ thí sinh')}
+    <div class="rpt-kpi-grid">
+      <div class="rpt-kpi rpt-kpi-blue">
+        <div class="rpt-kpi-num">${data.length}</div>
+        <div class="rpt-kpi-lbl">Tổng thí sinh</div>
+      </div>
+      <div class="rpt-kpi rpt-kpi-gold">
+        <div class="rpt-kpi-num">${maxScore}</div>
+        <div class="rpt-kpi-lbl">Điểm cao nhất</div>
+      </div>
+      <div class="rpt-kpi rpt-kpi-green">
+        <div class="rpt-kpi-num">${avgScore.toFixed(1)}</div>
+        <div class="rpt-kpi-lbl">Điểm trung bình</div>
+      </div>
+      <div class="rpt-kpi rpt-kpi-purple">
+        <div class="rpt-kpi-num">${fmtTime(avgTime)}</div>
+        <div class="rpt-kpi-lbl">Thời gian TB</div>
+      </div>
+      <div class="rpt-kpi rpt-kpi-teal">
+        <div class="rpt-kpi-num">${orgArr.length}</div>
+        <div class="rpt-kpi-lbl">Đơn vị tham gia</div>
+      </div>
+      <div class="rpt-kpi rpt-kpi-orange">
+        <div class="rpt-kpi-num">${Math.round(sexCounts.female/data.length*100)}%</div>
+        <div class="rpt-kpi-lbl">Tỷ lệ nữ</div>
+      </div>
+    </div>
+  `);
+
+  // ─────────────────────────────────────────────────────────
+  // SLIDE 2: Phân phối điểm
+  // ─────────────────────────────────────────────────────────
+  const sMax = Math.max(...sBuckets.map(b=>b.n));
+  makeReport('score-dist', '📈 Phân phối điểm', `
+    ${reportHeader('📈','Phân phối điểm số','Số lượng thí sinh theo dải điểm')}
+    <div class="rpt-chart-wrap">
+      ${barChart(sBuckets.map(b=>({...b,label:b.label,value:b.n,color:b.color})), 'n', sMax, 'color', 'label', 'pct')}
+      <div class="rpt-chart-note">Điểm trung bình: <strong>${avgScore.toFixed(1)}</strong> &nbsp;|&nbsp; Thấp nhất: <strong>${minScore}</strong> &nbsp;|&nbsp; Cao nhất: <strong>${maxScore}</strong></div>
+    </div>
+  `);
+
+  // ─────────────────────────────────────────────────────────
+  // SLIDE 3: Top đơn vị (số lượng)
+  // ─────────────────────────────────────────────────────────
+  const top10Orgs = orgArr.slice(0,10);
+  const oMax = top10Orgs.length ? top10Orgs[0].n : 1;
+  const totalPrizeCount = prizeData.length;
+  makeReport('org-count', '🏢 Đơn vị', `
+    ${reportHeader('🏢','Top đơn vị tham gia','10 đơn vị có nhiều thí sinh nhất')}
+    <div class="rpt-chart-wrap">
+      <div class="rpt-bars">
+        ${top10Orgs.map((o,i) => {
+          const pct = Math.round((o.n / oMax) * 100);
+          const winRate = o.n ? Math.round(o.prizes / o.n * 100) : 0;
+          const color = ['#FFD700','#E5C167','#4FC3F7','#69F0AE','#FFAB40','#CE93D8','#80DEEA','#FF8A65','#F48FB1','#AED581'][i];
+          return `<div class="rpt-bar-row rpt-bar-row--org">
+            <div class="rpt-bar-label" title="${o.name}">${o.name}</div>
+            <div class="rpt-bar-track">
+              <div class="rpt-bar-fill rpt-bar-anim" style="width:${pct}%;background:${color}"></div>
+            </div>
+            <div class="rpt-bar-val">${o.n}</div>
+            <div class="rpt-prize-tag" title="${o.prizes}/${o.n} có giải">${o.prizes}🏅 <span class="rpt-rate">${winRate}%</span></div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="rpt-chart-note">Tổng có giải (top ${totalPrizeCount}): <strong>${prizeData.length}</strong> thí sinh</div>
+    </div>
+  `);
+
+  // ─────────────────────────────────────────────────────────
+  // SLIDE 4: Điểm TB theo đơn vị (top 8, chỉ đơn vị đủ số lượng)
+  // ─────────────────────────────────────────────────────────
+  // Median of org participant counts (filter out very small orgs)
+  const sortedCounts = [...orgArr].map(o=>o.n).sort((a,b)=>a-b);
+  const medianCount = sortedCounts[Math.floor(sortedCounts.length/2)] || 1;
+  const eligibleOrgs = orgArr.filter(o => o.n >= medianCount);
+  const byAvgScore = [...eligibleOrgs].sort((a,b)=>b.avg-a.avg);
+  const topByScore = byAvgScore.slice(0,8);
+  const scoreOMax  = topByScore.length ? topByScore[0].avg : 1;
+  makeReport('org-score', '🥇 Điểm TB / Đơn vị', `
+    ${reportHeader('🥇','Điểm trung bình theo đơn vị',`Top 8 đơn vị có điểm TB cao nhất (≥${medianCount} thí sinh)`)}
+    <div class="rpt-chart-wrap">
+      ${barChart(topByScore.map((o,i)=>({...o,label:o.name,value:o.avg,color:i===0?'#FFD700':i<3?'#E5C167':'#4FC3F7'})), 'avg', scoreOMax, 'color', 'label', 'score')}
+      <div class="rpt-chart-note">Điểm TB toàn bộ: <strong>${avgScore.toFixed(1)}</strong> &nbsp;|&nbsp; Đơn vị đủ điều kiện: <strong>${eligibleOrgs.length}</strong>/${orgArr.length}</div>
+    </div>
+  `);
+
+  // ─────────────────────────────────────────────────────────
+  // SLIDE 5: Phân phối thời gian (mix: count bars + avg score dots)
+  // ─────────────────────────────────────────────────────────
+  const tMax = Math.max(...tBuckets.map(b=>b.n));
+  const tMaxScore = Math.max(...tBuckets.filter(b=>b.n>0).map(b=>b.avgScore));
+  makeReport('time-dist', '⏱ Thời gian', `
+    ${reportHeader('⏱','Phân phối thời gian làm bài','Số lượng & điểm trung bình theo dải thời gian hoàn thành')}
+    <div class="rpt-chart-wrap">
+      <div class="rpt-bars">
+        ${tBuckets.map(b => {
+          const pct = Math.round((b.n / tMax) * 100);
+          const scorePct = tMaxScore ? Math.round((b.avgScore / tMaxScore) * 100) : 0;
+          return `<div class="rpt-bar-row rpt-bar-row--mix">
+            <div class="rpt-bar-label">${b.label}</div>
+            <div class="rpt-bar-track">
+              <div class="rpt-bar-fill rpt-bar-anim" style="width:${pct}%;background:${b.color}"></div>
+            </div>
+            <div class="rpt-bar-val">${b.n} (${Math.round(b.n/data.length*100)}%)</div>
+            <div class="rpt-avg-score-cell">
+              <div class="rpt-avg-score-track">
+                <div class="rpt-avg-score-fill rpt-bar-anim" style="width:${scorePct}%;background:linear-gradient(90deg,#FFD700,#FF8A65)"></div>
+              </div>
+              <div class="rpt-avg-score-val">⭐ ${b.avgScore}</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="rpt-mix-legend">
+        <span class="rpt-legend-item"><span class="rpt-legend-dot" style="background:#80DEEA"></span>Số thí sinh</span>
+        <span class="rpt-legend-item"><span class="rpt-legend-dot" style="background:#FFD700"></span>Điểm TB</span>
+      </div>
+      <div class="rpt-chart-note">Nhanh nhất: <strong>${fmtTime(minTime)}</strong> &nbsp;|&nbsp; Chậm nhất: <strong>${fmtTime(maxTime)}</strong> &nbsp;|&nbsp; TB: <strong>${fmtTime(avgTime)}</strong></div>
+    </div>
+  `);
+
+  // ─────────────────────────────────────────────────────────
+  // SLIDE 6: Giới tính
+  // ─────────────────────────────────────────────────────────
+  const total = data.length;
+  const femPct = Math.round(sexCounts.female/total*100);
+  const malPct = Math.round(sexCounts.male/total*100);
+  makeReport('gender', '👥 Giới tính', `
+    ${reportHeader('👥','Tỷ lệ giới tính','Phân bổ thí sinh theo giới tính')}
+    <div class="rpt-gender-wrap">
+      <div class="rpt-donut-wrap">
+        <svg class="rpt-donut" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="20"/>
+          <circle cx="60" cy="60" r="48" fill="none" stroke="#F48FB1" stroke-width="20"
+            stroke-dasharray="${femPct * 3.016} 301.6"
+            stroke-dashoffset="0" transform="rotate(-90 60 60)"
+            class="rpt-donut-anim" style="--pct:${femPct}"/>
+          <circle cx="60" cy="60" r="48" fill="none" stroke="#4FC3F7" stroke-width="20"
+            stroke-dasharray="${malPct * 3.016} 301.6"
+            stroke-dashoffset="${-(femPct) * 3.016}" transform="rotate(-90 60 60)"
+            class="rpt-donut-anim" style="--pct:${malPct}"/>
+          <text x="60" y="56" text-anchor="middle" fill="#fff" font-size="14" font-weight="800">${total}</text>
+          <text x="60" y="70" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="8">thí sinh</text>
+        </svg>
+      </div>
+      <div class="rpt-gender-legend">
+        <div class="rpt-gender-item">
+          <div class="rpt-gender-dot" style="background:#F48FB1"></div>
+          <div>
+            <div class="rpt-gender-pct">${femPct}%</div>
+            <div class="rpt-gender-lbl">Nữ (${sexCounts.female})</div>
+          </div>
+        </div>
+        <div class="rpt-gender-item">
+          <div class="rpt-gender-dot" style="background:#4FC3F7"></div>
+          <div>
+            <div class="rpt-gender-pct">${malPct}%</div>
+            <div class="rpt-gender-lbl">Nam (${sexCounts.male})</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+
+  return count;
+}
+
+function buildSlides(data, prizes, contestName, contestDesc, fullData) {
+  fullData = fullData || data; // fallback to displayData if not provided
   const container = document.getElementById('slideContainer');
   container.innerHTML = '';
 
@@ -839,6 +1144,8 @@ function buildSlides(data, prizes, contestName, contestDesc) {
       const s = document.createElement('section');
       s.className = `slide prize-level-${level} ${className || ''}`;
       if (skipHeaderAnim) s.classList.add('no-section-anim');
+      // Mark slides of the most prestigious prize (origIndex === 0 = first entry in config)
+      if (origIndex === 0) s.classList.add('special-prize-slide');
       s.id = `slide-${slideIndex}`;
       s.innerHTML = slideBgDecorations(level) + content;
       container.appendChild(s);
@@ -915,6 +1222,9 @@ function buildSlides(data, prizes, contestName, contestDesc) {
     }
   });
 
+  // --- Report slides ---
+  slideIndex += buildReportSlides(container, fullData, slideNames, slideIndex, data);
+
   // --- Final slide: footer ---
   const footerSlide = document.createElement('section');
   footerSlide.className = 'slide footer-slide';
@@ -971,6 +1281,20 @@ function goToSlide(index) {
   // Animate chart bars if entering a chart slide
   if (newSlide.classList.contains('chart-slide')) {
     setTimeout(() => animateChartBars(newSlide), 300);
+  }
+
+  // 🎆 Fireworks for special prize (first prize in config = most prestigious)
+  if (newSlide.classList.contains('special-prize-slide')) {
+    setTimeout(() => {
+      fitNameToOneLine(newSlide);
+      addSparkleStars(newSlide);
+      addAvatarOrbit(newSlide);
+      runTypewriterOnSlide(newSlide);
+      launchFireworks();
+      showCongratsBanner();
+    }, 500);
+  } else {
+    stopFireworks();
   }
 
   // Use transitionend to re-enable controls when the slide transition completes.
@@ -1078,7 +1402,268 @@ function setupControls() {
   });
 }
 
-// ===== ANIMATED COUNTER =====
+// ===== FIREWORKS ENGINE =====
+(function() {
+  let canvas, ctx, animId, ambientTimer, stopTimer;
+  const particles = [];
+  let ambientActive = false;
+
+  const COLORS = [
+    '#FFD700','#FF6B6B','#4FC3F7','#69F0AE','#CE93D8',
+    '#FFAB40','#F48FB1','#80DEEA','#FFF176','#FFFFFF'
+  ];
+
+  function init() {
+    canvas = document.getElementById('fireworksCanvas');
+    ctx    = canvas.getContext('2d');
+    window.addEventListener('resize', resize);
+    resize();
+  }
+
+  function resize() {
+    if (!canvas) return;
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+
+  function burst(cx, cy, big) {
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    const count = big ? (90 + Math.floor(Math.random() * 50)) : (55 + Math.floor(Math.random() * 30));
+    const speedMult = big ? 1 : 0.6;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + (Math.random() - .5) * .4;
+      const speed = (2.5 + Math.random() * 4.5) * speedMult;
+      particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        alpha: 1,
+        color,
+        size: big ? (2 + Math.random() * 2.5) : (1 + Math.random() * 1.5),
+        decay: big ? (.013 + Math.random() * .009) : (.018 + Math.random() * .012),
+      });
+    }
+    // Glitter extras
+    const glitterCount = big ? 20 : 6;
+    for (let i = 0; i < glitterCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = (.5 + Math.random() * 2) * speedMult;
+      particles.push({
+        x: cx + (Math.random() - .5) * 30,
+        y: cy + (Math.random() - .5) * 30,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        alpha: 1,
+        color: '#FFFFFF',
+        size: big ? (1 + Math.random()) : (.5 + Math.random() * .8),
+        decay: .008 + Math.random() * .006,
+      });
+    }
+  }
+
+  function loop() {
+    // Clear completely → no black fill → transparent background
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw fading trails using destination-out composite
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.vy   += .055;
+      p.vx   *= .985;
+      p.x    += p.vx;
+      p.y    += p.vy;
+      p.alpha -= p.decay;
+      if (p.alpha <= 0) { particles.splice(i, 1); continue; }
+
+      ctx.save();
+      ctx.globalAlpha = p.alpha;
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur  = 6;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Stop rAF only when no particles AND ambient is off
+    if (particles.length === 0 && !ambientActive) {
+      cancelAnimationFrame(animId);
+      animId = null;
+      return;
+    }
+    animId = requestAnimationFrame(loop);
+  }
+
+  function scheduleShots(durations, big = true) {
+    const W = canvas.width, H = canvas.height;
+    durations.forEach(t => {
+      setTimeout(() => {
+        const x = W * (.15 + Math.random() * .70);
+        const y = H * (.05 + Math.random() * .55);
+        burst(x, y, big);
+      }, t);
+    });
+  }
+
+  function startAmbient() {
+    ambientActive = true;
+    function fire() {
+      if (!ambientActive) return;
+      const W = canvas.width, H = canvas.height;
+      // Small bursts on the sides so they don't cover the center content
+      const side = Math.random() < .5;
+      const x = side ? W * (.02 + Math.random() * .22) : W * (.76 + Math.random() * .22);
+      const y = H * (.05 + Math.random() * .70);
+      burst(x, y, false);
+      if (!animId) { animId = requestAnimationFrame(loop); }
+      ambientTimer = setTimeout(fire, 400 + Math.random() * 600);
+    }
+    ambientTimer = setTimeout(fire, 500);
+  }
+
+  function stopAmbient() {
+    ambientActive = false;
+    if (ambientTimer) { clearTimeout(ambientTimer); ambientTimer = null; }
+  }
+
+  window.launchFireworks = function() {
+    if (!canvas) init();
+    resize();
+    particles.length = 0;
+    if (animId) cancelAnimationFrame(animId);
+    if (stopTimer)  clearTimeout(stopTimer);
+    stopAmbient();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    canvas.style.display  = 'block';
+    canvas.style.opacity  = '1';
+    canvas.style.transition = '';
+
+    // Wave 1 – immediate
+    scheduleShots([0, 180, 380]);
+    // Wave 2
+    scheduleShots([700, 950, 1200]);
+    // Wave 3
+    scheduleShots([1600, 1900, 2100, 2350]);
+    // Wave 4
+    scheduleShots([2800, 3100, 3400, 3700, 4000]);
+    // Finale
+    scheduleShots([4500, 4650, 4800, 4950, 5100, 5250]);
+
+    animId = requestAnimationFrame(loop);
+
+    // After main show → switch to ambient mode (stays until slide changes)
+    stopTimer = setTimeout(() => {
+      startAmbient();
+    }, 6500);
+  };
+
+  window.stopFireworks = function() {
+    stopAmbient();
+    if (animId) { cancelAnimationFrame(animId); animId = null; }
+    if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
+    if (canvas) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.style.display = 'none';
+    }
+    particles.length = 0;
+  };
+})();
+
+// ===== CONGRATS BANNER =====
+function showCongratsBanner() {
+  const banner = document.getElementById('congratsBanner');
+  if (!banner) return;
+  banner.classList.add('show');
+  setTimeout(() => banner.classList.remove('show'), 6000);
+}
+
+// ===== TYPEWRITER EFFECT for special prize name =====
+function runTypewriterOnSlide(slide) {
+  const nameEl = slide.querySelector('.podium-name');
+  if (!nameEl) return;
+
+  // Store original text once
+  if (!nameEl.dataset.fullText) {
+    nameEl.dataset.fullText = nameEl.textContent.trim();
+  }
+  const full = nameEl.dataset.fullText;
+
+  // Reset
+  nameEl.innerHTML = '<span class="typewriter-cursor"></span>';
+
+  let i = 0;
+  const speed = Math.max(40, Math.min(90, Math.round(2400 / full.length)));
+
+  function type() {
+    if (i < full.length) {
+      const cursor = nameEl.querySelector('.typewriter-cursor');
+      // Insert character before cursor
+      cursor.insertAdjacentText('beforebegin', full[i]);
+      i++;
+      setTimeout(type, speed);
+    } else {
+      // Remove cursor after a short pause
+      setTimeout(() => {
+        const cursor = nameEl.querySelector('.typewriter-cursor');
+        if (cursor) cursor.remove();
+      }, 1400);
+    }
+  }
+  // Slight delay so slide transition finishes first
+  setTimeout(type, 600);
+}
+
+
+function addSparkleStars(slide) {
+  // Remove existing sparkles
+  slide.querySelectorAll('.special-sparkle').forEach(el => el.remove());
+  const starColors = ['#FFD700','#FFF176','#FFAB40','#E5C167','#FFFFFF','#4FC3F7'];
+  const count = 18;
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'special-sparkle';
+    const x = 2 + Math.random() * 96;
+    const y = 2 + Math.random() * 96;
+    const sz = 10 + Math.floor(Math.random() * 22);
+    const dur = (1.0 + Math.random() * 1.4).toFixed(2);
+    const delay = (Math.random() * 2).toFixed(2);
+    const clr = starColors[Math.floor(Math.random() * starColors.length)];
+    el.style.cssText = `left:${x}%;top:${y}%;font-size:${sz}px;` +
+      `--dur:${dur}s;--delay:${delay}s;--clr:${clr};--sz:${sz}px;`;
+    slide.appendChild(el);
+  }
+}
+
+function addAvatarOrbit(slide) {
+  slide.querySelectorAll('.avatar-orbit').forEach(el => el.remove());
+  const avFrame = slide.querySelector('.podium-av-col .av-frame');
+  if (!avFrame) return;
+  const orbit = document.createElement('div');
+  orbit.className = 'avatar-orbit';
+  avFrame.appendChild(orbit);
+}
+
+function fitNameToOneLine(slide) {
+  const nameEl = slide.querySelector('.podium-count-1 .podium-name');
+  if (!nameEl) return;
+  const parent = nameEl.parentElement;
+  if (!parent) return;
+  const maxSize = 46;
+  const minSize = 20;
+  let size = maxSize;
+  nameEl.style.fontSize = size + 'px';
+  while (nameEl.scrollWidth > parent.clientWidth && size > minSize) {
+    size -= 1;
+    nameEl.style.fontSize = size + 'px';
+  }
+}
 function animateCounter(el, target) {
   if (!el) return;
   let current = 0;
@@ -1101,6 +1686,59 @@ function parseInputData(raw) {
     alert('Lỗi parse JSON: ' + e.message);
     return null;
   }
+}
+
+// ===== INIT (check URL param) =====
+async function initApp() {
+  dovLoad();
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('custom_data') === '1') {
+    // Show config panel (default behavior)
+    document.getElementById('configPanel').classList.remove('hidden');
+    return;
+  }
+  // Auto-load data.json with default config
+  document.getElementById('configPanel').classList.add('hidden');
+  document.getElementById('loadingScreen').classList.remove('hidden');
+
+  let data;
+  try {
+    const resp = await fetch('data.json');
+    if (resp.ok) {
+      const json = await resp.json();
+      data = Array.isArray(json) ? json : (json.result || []);
+    }
+  } catch (e) { /* ignore */ }
+
+  if (!data || data.length === 0) {
+    // Fallback to config panel if data.json missing
+    document.getElementById('loadingScreen').classList.add('hidden');
+    document.getElementById('configPanel').classList.remove('hidden');
+    return;
+  }
+
+  data.sort((a, b) => a.ranking - b.ranking);
+  const prizes = getPrizeConfig();
+  const contestName = document.getElementById('cfgContestName').value.trim() || 'Cuộc thi';
+  const contestDesc = document.getElementById('cfgContestDesc').value.trim();
+  const totalPrizeCount = prizes.reduce((s, p) => s + p.count, 0);
+  const displayData = data.slice(0, totalPrizeCount);
+
+  buildSlides(displayData, prizes, contestName, contestDesc, data);
+  createParticles();
+  setupControls();
+
+  setTimeout(() => {
+    document.getElementById('loadingScreen').classList.add('hidden');
+    const main = document.getElementById('mainContent');
+    main.style.display = 'block';
+    requestAnimationFrame(() => main.classList.add('show'));
+    setTimeout(() => {
+      animateCounter(document.getElementById('statTotal'), data.length);
+      animateCounter(document.getElementById('statPrizes'), totalPrizeCount);
+      animateCounter(document.getElementById('statTop'), data[0]?.score || 0);
+    }, 400);
+  }, 1000);
 }
 
 // ===== START APP =====
@@ -1145,7 +1783,7 @@ async function startApp() {
   const totalPrizeCount = prizes.reduce((s, p) => s + p.count, 0);
   const displayData = data.slice(0, totalPrizeCount);
 
-  buildSlides(displayData, prizes, contestName, contestDesc);
+  buildSlides(displayData, prizes, contestName, contestDesc, data);
   createParticles();
   setupControls();
 
@@ -1162,3 +1800,6 @@ async function startApp() {
     }, 400);
   }, 1000);
 }
+
+// Auto-init on load
+window.addEventListener('DOMContentLoaded', initApp);
