@@ -13,6 +13,39 @@ function formatTime(seconds) {
 let currentSlide = 0;
 let totalSlides = 0;
 let isTransitioning = false;
+// Auto-advance settings
+let autoNextEnabled = true;
+const autoNextInterval = 10000; // 10s
+let autoNextTimer = null;
+
+function startAutoNext() {
+  stopAutoNext();
+  if (!autoNextEnabled) return;
+  autoNextTimer = setInterval(() => {
+    // skip if config panel open or transitioning
+    const cfgOpen = document.getElementById('configPanel') && !document.getElementById('configPanel').classList.contains('hidden');
+    if (cfgOpen || isTransitioning) return;
+    // If already at last slide, do nothing
+    if (currentSlide >= totalSlides - 1) return;
+    nextSlide();
+  }, autoNextInterval);
+}
+
+function stopAutoNext() {
+  if (autoNextTimer) { clearInterval(autoNextTimer); autoNextTimer = null; }
+}
+
+function resetAutoNext() {
+  stopAutoNext();
+  startAutoNext();
+}
+
+// Mobile detection helper
+function isMobileView() {
+  try {
+    return window.innerWidth <= 720 || ('ontouchstart' in window && window.innerWidth <= 980);
+  } catch (e) { return false; }
+}
 
 // ===== CARD DESIGNER =====
 const DOV_CW = 240, DOV_CH = 340;
@@ -512,6 +545,22 @@ function makeAvatarPlaceholder(name, size, cls) {
 function createParticles() {
   const c = document.getElementById('particles');
   if (!c) return;
+  // On mobile, keep very few or no particles to reduce repaint cost
+  if (isMobileView()) {
+    const colors = ['#E5C167', '#0079C1', '#BD952F', '#fff'];
+    const count = window.innerWidth > 420 ? 6 : 0;
+    for (let i = 0; i < count; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.style.left = Math.random() * 100 + '%';
+      p.style.animationDuration = (3 + Math.random() * 6) + 's';
+      p.style.animationDelay = Math.random() * 6 + 's';
+      p.style.width = p.style.height = (1 + Math.random() * 3) + 'px';
+      p.style.background = colors[Math.floor(Math.random() * colors.length)];
+      c.appendChild(p);
+    }
+    return;
+  }
   const colors = ['#E5C167', '#0079C1', '#BD952F', '#fff'];
   for (let i = 0; i < 30; i++) {
     const p = document.createElement('div');
@@ -1277,6 +1326,8 @@ function goToSlide(index) {
   currentSlide = index;
   updateNavDots();
   updateSlideCounter();
+  // restart auto-next timer on manual navigation
+  resetAutoNext();
 
   // Animate chart bars if entering a chart slide
   if (newSlide.classList.contains('chart-slide')) {
@@ -1290,8 +1341,10 @@ function goToSlide(index) {
       addSparkleStars(newSlide);
       addAvatarOrbit(newSlide);
       runTypewriterOnSlide(newSlide);
-      launchFireworks();
-      showCongratsBanner();
+      if (!isMobileView()) {
+        launchFireworks();
+        showCongratsBanner();
+      }
     }, 500);
   } else {
     stopFireworks();
@@ -1400,6 +1453,18 @@ function setupControls() {
       else prevSlide();
     }
   });
+
+  // Auto-next toggle (persisted)
+  const autoChk = document.getElementById('autoNextToggle');
+  if (autoChk) {
+    const saved = localStorage.getItem('bxhAutoNext');
+    if (saved !== null) { autoChk.checked = saved === '1'; autoNextEnabled = autoChk.checked; }
+    autoChk.addEventListener('change', () => {
+      autoNextEnabled = autoChk.checked;
+      localStorage.setItem('bxhAutoNext', autoChk.checked ? '1' : '0');
+      if (autoNextEnabled) startAutoNext(); else stopAutoNext();
+    });
+  }
 }
 
 // ===== FIREWORKS ENGINE =====
@@ -1586,6 +1651,7 @@ function showCongratsBanner() {
 
 // ===== TYPEWRITER EFFECT for special prize name =====
 function runTypewriterOnSlide(slide) {
+  if (isMobileView()) return; // skip heavy typing on mobile
   const nameEl = slide.querySelector('.podium-name');
   if (!nameEl) return;
 
@@ -1622,6 +1688,7 @@ function runTypewriterOnSlide(slide) {
 
 
 function addSparkleStars(slide) {
+  if (isMobileView()) return; // skip sparkles on mobile
   // Remove existing sparkles
   slide.querySelectorAll('.special-sparkle').forEach(el => el.remove());
   const starColors = ['#FFD700','#FFF176','#FFAB40','#E5C167','#FFFFFF','#4FC3F7'];
@@ -1642,6 +1709,7 @@ function addSparkleStars(slide) {
 }
 
 function addAvatarOrbit(slide) {
+  if (isMobileView()) return; // skip orbit on mobile
   slide.querySelectorAll('.avatar-orbit').forEach(el => el.remove());
   const avFrame = slide.querySelector('.podium-av-col .av-frame');
   if (!avFrame) return;
@@ -1727,6 +1795,7 @@ async function initApp() {
   buildSlides(displayData, prizes, contestName, contestDesc, data);
   createParticles();
   setupControls();
+  startAutoNext();
 
   setTimeout(() => {
     document.getElementById('loadingScreen').classList.add('hidden');
@@ -1786,6 +1855,7 @@ async function startApp() {
   buildSlides(displayData, prizes, contestName, contestDesc, data);
   createParticles();
   setupControls();
+  startAutoNext();
 
   setTimeout(() => {
     document.getElementById('loadingScreen').classList.add('hidden');
