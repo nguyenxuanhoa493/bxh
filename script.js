@@ -26,8 +26,12 @@ function startAutoNext() {
     const cfgOpen = document.getElementById('configPanel') && !document.getElementById('configPanel').classList.contains('hidden');
     if (cfgOpen || isTransitioning) return;
     // If already at last slide, do nothing
-    if (currentSlide >= totalSlides - 1) return;
-    nextSlide();
+      // If at last slide, loop back to the first slide; otherwise advance
+      if (currentSlide >= totalSlides - 1) {
+        goToSlide(0);
+      } else {
+        nextSlide();
+      }
   }, autoNextInterval);
 }
 
@@ -1274,16 +1278,7 @@ function buildSlides(data, prizes, contestName, contestDesc, fullData) {
   // --- Report slides ---
   slideIndex += buildReportSlides(container, fullData, slideNames, slideIndex, data);
 
-  // --- Final slide: footer ---
-  const footerSlide = document.createElement('section');
-  footerSlide.className = 'slide footer-slide';
-  footerSlide.id = `slide-${slideIndex}`;
-  footerSlide.innerHTML = `
-    <div class="footer-logo">${contestName}</div>
-    <p>Powered by LotusLMS • Bảng vinh danh được tạo tự động</p>`;
-  container.appendChild(footerSlide);
-  slideNames.push('Kết thúc');
-  slideIndex++;
+  // (Footer slide removed by user request)
 
   totalSlides = slideIndex;
 
